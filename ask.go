@@ -13,8 +13,8 @@ import (
 	"os/signal"
 
 	"github.com/evanphx/alexa/config"
+	"github.com/evanphx/alexa/portaudio"
 	"github.com/fatih/color"
-	"github.com/gordonklaus/portaudio"
 )
 
 const DefaultQuietFrames = 30
