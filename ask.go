@@ -47,6 +47,12 @@ func (r *AskCommand) Execute(args []string) error {
 
 	var opts ListenOpts
 
+	muted, err := OSXMuted()
+	if err == nil && !muted {
+		OSXMute()
+		defer OSXUnmute()
+	}
+
 	opts.State = func(s State) {
 		switch s {
 		case Waiting:
@@ -54,6 +60,7 @@ func (r *AskCommand) Execute(args []string) error {
 		case Listening:
 			c.Println("Listening...")
 		case Asking:
+			OSXUnmute()
 			c.Println("Asking...")
 		}
 	}
