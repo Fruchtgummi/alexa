@@ -6,6 +6,9 @@ import (
 	"github.com/mjibson/go-dsp/fft"
 )
 
+// Voice Activity Detection (that's what they call it when you detect
+// that someone has started (or stopped) talking).
+
 type VAD struct {
 	samples      []complex128
 	fft          []complex128
@@ -21,6 +24,8 @@ func NewVAD(width int) *VAD {
 	}
 }
 
+// Given the samples, return the spectral flux value as compared
+// to the previous samples.
 func (v *VAD) Flux(samples []int16) float64 {
 	for i, s := range samples {
 		v.samples[i] = complex(float64(s), 0)
