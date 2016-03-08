@@ -2,18 +2,16 @@ package alexa
 
 import (
 	"bytes"
-	"encoding/binary"
 	"io"
 	"mime"
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
-	"os"
 	"os/exec"
-	"os/signal"
+	"sort"
+	"time"
 
 	"github.com/evanphx/alexa/config"
-	"github.com/evanphx/alexa/portaudio"
 	"github.com/fatih/color"
 )
 
@@ -29,6 +27,70 @@ func max(buf []int16) int16 {
 	}
 
 	return max
+}
+
+func avg(buf []int16) int16 {
+	var tot int64
+
+	for _, s := range buf {
+		if s < 0 {
+			s = -s
+		}
+		tot += int64(s)
+	}
+
+	return int16(tot / int64(len(buf)))
+}
+
+const silenceFloor = 327 // int16(0.01 * float64(math.MaxInt16))
+
+func silent(buf []int16) float32 {
+	var silent int
+
+	for _, s := range buf {
+		if s < silenceFloor && s > -silenceFloor {
+			silent++
+		}
+	}
+
+	return 100 * (float32(silent) / float32(len(buf)))
+}
+
+func variance(buf []int16) int16 {
+	a := avg(buf)
+
+	var m int16
+
+	for _, s := range buf {
+		diff := s - a
+
+		if diff < 0 {
+			diff = -diff
+		}
+
+		if diff > m {
+			m = diff
+		}
+	}
+
+	return m
+}
+
+type int16slice []int16
+
+func (s int16slice) Len() int           { return len(s) }
+func (s int16slice) Less(i, j int) bool { return s[i] < s[j] }
+func (s int16slice) Swap(i, j int)      { s[i], s[j] = s[j], s[i] }
+
+func nine95(buf, tmp []int16) int16 {
+	copy(tmp, buf)
+
+	spec := int16slice(tmp)
+	sort.Sort(spec)
+
+	pos := len(buf) - int(float32(len(buf))*0.05)
+
+	return tmp[pos]
 }
 
 type AskCommand struct {
@@ -69,85 +131,12 @@ func (r *AskCommand) Execute(args []string) error {
 }
 
 type ListenOpts struct {
-	State       func(State)
-	QuietFrames int
+	State         func(State)
+	QuietDuration time.Duration
 }
 
 func Listen(opts ListenOpts) error {
-	portaudio.Initialize()
-	defer portaudio.Terminate()
-
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, os.Interrupt, os.Kill)
-
-	defer signal.Reset(os.Interrupt, os.Kill)
-
-	in := make([]int16, 512)
-	stream, err := portaudio.OpenDefaultStream(1, 0, 16000, len(in), in)
-	if err != nil {
-		return err
-	}
-	defer stream.Close()
-
-	err = stream.Start()
-	if err != nil {
-		return err
-	}
-
-	var (
-		buf            bytes.Buffer
-		heardSomething bool
-		quiets         int
-		quietFrames    = opts.QuietFrames
-	)
-
-	if quietFrames == 0 {
-		quietFrames = DefaultQuietFrames
-	}
-
-	if opts.State != nil {
-		opts.State(Waiting)
-	}
-
-reader:
-	for {
-		err = stream.Read()
-		if err != nil {
-			return err
-		}
-
-		err = binary.Write(&buf, binary.LittleEndian, in)
-		if err != nil {
-			return err
-		}
-
-		if max(in) > 1000 {
-			if heardSomething {
-				if quiets > 0 {
-					quiets /= 2
-				}
-			} else {
-				heardSomething = true
-				if opts.State != nil {
-					opts.State(Listening)
-				}
-			}
-		} else if heardSomething {
-			quiets++
-
-			if quiets == 30 {
-				break reader
-			}
-		}
-
-		select {
-		case <-sig:
-			break reader
-		default:
-		}
-	}
-
-	err = stream.Stop()
+	buf, err := ListenIntoBuffer(opts)
 	if err != nil {
 		return err
 	}
