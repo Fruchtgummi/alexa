@@ -3,24 +3,29 @@ package alexa
 import (
 	"bytes"
 	"encoding/binary"
-	"os"
-	"os/signal"
 	"time"
 
 	"github.com/evanphx/alexa/portaudio"
 )
 
+var audioRunning bool
+
+func InitAudio() {
+	if !audioRunning {
+		portaudio.Initialize()
+		audioRunning = true
+	}
+}
+
+func FreeAudio() {
+	if audioRunning {
+		portaudio.Terminate()
+	}
+}
+
 const DefaultQuietTime = time.Second
 
 func ListenIntoBuffer(opts ListenOpts) (*bytes.Buffer, error) {
-	portaudio.Initialize()
-	defer portaudio.Terminate()
-
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, os.Interrupt, os.Kill)
-
-	defer signal.Reset(os.Interrupt, os.Kill)
-
 	in := make([]int16, 8196)
 	stream, err := portaudio.OpenDefaultStream(1, 0, 16000, len(in), in)
 	if err != nil {
@@ -36,7 +41,7 @@ func ListenIntoBuffer(opts ListenOpts) (*bytes.Buffer, error) {
 
 	var (
 		buf            bytes.Buffer
-		heardSomething bool
+		heardSomething = opts.AlreadyListening
 		quiet          bool
 		quietTime      = opts.QuietDuration
 		quietStart     time.Time
@@ -50,7 +55,11 @@ func ListenIntoBuffer(opts ListenOpts) (*bytes.Buffer, error) {
 	}
 
 	if opts.State != nil {
-		opts.State(Waiting)
+		if heardSomething {
+			opts.State(Listening)
+		} else {
+			opts.State(Waiting)
+		}
 	}
 
 reader:
@@ -98,12 +107,6 @@ reader:
 			}
 
 			lastFlux = flux
-		}
-
-		select {
-		case <-sig:
-			break reader
-		default:
 		}
 	}
 

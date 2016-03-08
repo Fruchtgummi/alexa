@@ -11,6 +11,7 @@ func main() {
 	parser.AddCommand("audio", "list audio devices", "", &alexa.AudioCommand{})
 	parser.AddCommand("setup", "start the setup procedure", "", &alexa.SetupCommand{})
 	parser.AddCommand("ask", "send alexa a question", "", &alexa.AskCommand{})
+	parser.AddCommand("test", "test voice rec", "", &alexa.TestCommand{})
 
 	parser.Parse()
 }

@@ -8,92 +8,17 @@ import (
 	"net/http"
 	"net/textproto"
 	"os/exec"
-	"sort"
+	"path/filepath"
 	"time"
 
 	"github.com/evanphx/alexa/config"
+	"github.com/evanphx/alexa/pocketsphinx"
 	"github.com/fatih/color"
 )
 
-const DefaultQuietFrames = 30
-
-func max(buf []int16) int16 {
-	var max int16
-
-	for _, s := range buf {
-		if s > max {
-			max = s
-		}
-	}
-
-	return max
-}
-
-func avg(buf []int16) int16 {
-	var tot int64
-
-	for _, s := range buf {
-		if s < 0 {
-			s = -s
-		}
-		tot += int64(s)
-	}
-
-	return int16(tot / int64(len(buf)))
-}
-
-const silenceFloor = 327 // int16(0.01 * float64(math.MaxInt16))
-
-func silent(buf []int16) float32 {
-	var silent int
-
-	for _, s := range buf {
-		if s < silenceFloor && s > -silenceFloor {
-			silent++
-		}
-	}
-
-	return 100 * (float32(silent) / float32(len(buf)))
-}
-
-func variance(buf []int16) int16 {
-	a := avg(buf)
-
-	var m int16
-
-	for _, s := range buf {
-		diff := s - a
-
-		if diff < 0 {
-			diff = -diff
-		}
-
-		if diff > m {
-			m = diff
-		}
-	}
-
-	return m
-}
-
-type int16slice []int16
-
-func (s int16slice) Len() int           { return len(s) }
-func (s int16slice) Less(i, j int) bool { return s[i] < s[j] }
-func (s int16slice) Swap(i, j int)      { s[i], s[j] = s[j], s[i] }
-
-func nine95(buf, tmp []int16) int16 {
-	copy(tmp, buf)
-
-	spec := int16slice(tmp)
-	sort.Sort(spec)
-
-	pos := len(buf) - int(float32(len(buf))*0.05)
-
-	return tmp[pos]
-}
-
 type AskCommand struct {
+	Prompt bool   `short:"p" description:"listen for prompt, then ask"`
+	Path   string `short:"d" description:"directory with the sphinx stuff"`
 }
 
 type State int
@@ -105,6 +30,13 @@ const (
 )
 
 func (r *AskCommand) Execute(args []string) error {
+	InitAudio()
+	defer FreeAudio()
+
+	if r.Prompt {
+		return r.prompted()
+	}
+
 	c := color.New(color.Bold)
 
 	var opts ListenOpts
@@ -130,9 +62,85 @@ func (r *AskCommand) Execute(args []string) error {
 	return Listen(opts)
 }
 
+func (r *AskCommand) prompted() error {
+	c := color.New(color.Bold)
+
+	conf := pocketsphinx.Config{
+		Hmm:  filepath.Join(r.Path, "models/en-us/en-us"),
+		Dict: filepath.Join(r.Path, "models/alexa/9671.dic"),
+		Lm:   filepath.Join(r.Path, "models/alexa/9671.lm"),
+	}
+
+	ps := pocketsphinx.NewPocketSphinx(conf)
+	defer ps.Free()
+
+	for {
+		var opts ListenOpts
+
+		opts.State = func(s State) {
+			switch s {
+			case Waiting:
+				c.Println("Waiting for prompt...")
+			case Listening:
+				c.Println("Listening to see if this is the prompt...")
+			case Asking:
+				c.Println("Prompt heard!")
+			}
+		}
+
+		buf, err := ListenIntoBuffer(opts)
+		if err != nil {
+			return err
+		}
+
+		results, err := ps.ProcessUtt(buf.Bytes(), 0, false)
+		if err != nil {
+			return err
+		}
+
+		if len(results) < 1 {
+			c.Println("Unknown, retrying")
+			continue
+		}
+
+		if results[0].Text != "HEY ALEXA" {
+			c.Println("Unknown, retrying")
+			continue
+		}
+
+		exec.Command("afplay", "beep.wav").Run()
+
+		muted, err := OSXMuted()
+		if err == nil && !muted {
+			OSXMute()
+			defer OSXUnmute()
+		}
+
+		opts.State = func(s State) {
+			switch s {
+			case Waiting:
+				c.Println("Waiting...")
+			case Listening:
+				c.Println("Listening...")
+			case Asking:
+				OSXUnmute()
+				c.Println("Asking...")
+			}
+		}
+
+		opts.AlreadyListening = true
+
+		err = Listen(opts)
+		if err != nil {
+			return err
+		}
+	}
+}
+
 type ListenOpts struct {
-	State         func(State)
-	QuietDuration time.Duration
+	State            func(State)
+	QuietDuration    time.Duration
+	AlreadyListening bool
 }
 
 func Listen(opts ListenOpts) error {
