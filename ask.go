@@ -118,12 +118,12 @@ func (r *AskCommand) Execute(args []string) error {
 	opts.State = func(s State) {
 		switch s {
 		case Waiting:
-			c.Println("Waiting...")
+			c.Println("Warte...")
 		case Listening:
-			c.Println("Listening...")
+			c.Println("Höre...")
 		case Asking:
 			OSXUnmute()
-			c.Println("Asking...")
+			c.Println("Frage...")
 		}
 	}
 
