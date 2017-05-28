@@ -7,7 +7,7 @@ import (
 	"os/signal"
 	"time"
 
-	"github.com/evanphx/alexa/portaudio"
+	"github.com/Fruchtgummi/alexa/portaudio"
 )
 
 const DefaultQuietTime = time.Second

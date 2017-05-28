@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/evanphx/alexa/config"
+	"github.com/Fruchtgummi/alexa/config"
 )
 
 type SetupCommand struct {

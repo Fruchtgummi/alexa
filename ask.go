@@ -11,7 +11,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/evanphx/alexa/config"
+	"github.com/Fruchtgummi/alexa/config"
 	"github.com/fatih/color"
 )
 

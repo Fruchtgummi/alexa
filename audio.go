@@ -3,7 +3,7 @@ package alexa
 import (
 	"fmt"
 
-	"github.com/evanphx/alexa/portaudio"
+	"github.com/Fruchtgummi/alexa/portaudio"
 )
 
 type AudioCommand struct {

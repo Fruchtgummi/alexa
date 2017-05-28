@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/evanphx/alexa"
+	"github.com/Fruchtgummi/alexa"
 	"github.com/jessevdk/go-flags"
 )
 
